@@ -5,7 +5,8 @@ import { daysBetween, uid } from "./utils";
 const defaultSettings = {
   theme: "system",
   accentColor: "#2f6d54",
-  notifications: false
+  notifications: false,
+  onboardingCompleted: false
 };
 
 function formatHabitName(value) {

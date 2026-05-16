@@ -22,6 +22,7 @@ import {
   Gamepad2,
   Home,
   HeartPulse,
+  LineChart,
   MessageCircle,
   Monitor,
   Moon,
@@ -34,6 +35,7 @@ import {
   ShoppingBag,
   Smartphone,
   Sparkles,
+  Target,
   Trophy,
   Upload,
   Utensils,
@@ -97,11 +99,18 @@ function useClock() {
 }
 
 function App() {
-  const { init, ready, settings, view, activeId, counters } = useSinceStore();
+  const { init, ready, settings, view, activeId, counters, updateSetting } = useSinceStore();
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
 
   useEffect(() => {
     init();
   }, [init]);
+
+  useEffect(() => {
+    if (ready && !settings.onboardingCompleted) {
+      setOnboardingOpen(true);
+    }
+  }, [ready, settings.onboardingCompleted]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -144,13 +153,128 @@ function App() {
         <div className="page-stage" key={`${view}-${activeId || "root"}`}>
           {view === "dashboard" && <Dashboard />}
           {view === "detail" && activeCounter && <Detail counter={activeCounter} />}
-          {view === "settings" && <SettingsView />}
+          {view === "settings" && <SettingsView onOpenOnboarding={() => setOnboardingOpen(true)} />}
           {view === "editor" && <Editor />}
         </div>
       </section>
       <BottomNav />
       <FloatingAction />
+      {onboardingOpen && (
+        <Onboarding
+          onClose={async () => {
+            await updateSetting("onboardingCompleted", true);
+            setOnboardingOpen(false);
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+const onboardingSteps = [
+  {
+    icon: Target,
+    title: "Scegli cosa vuoi lasciare alle spalle",
+    body: "Since crea un contatore per ogni abitudine o dipendenza che vuoi monitorare: fumo, social, zuccheri, spese impulsive o qualsiasi percorso personale.",
+    accent: "#3f7d58"
+  },
+  {
+    icon: CalendarClock,
+    title: "Imposta da quando sei in cammino",
+    body: "Puoi partire da adesso, da ieri o da una data precisa. L'app tiene il conto dei giorni, delle ore e del progresso verso il prossimo traguardo.",
+    accent: "#5378a7"
+  },
+  {
+    icon: Trophy,
+    title: "Leggi i progressi senza giudicarti",
+    body: "Ogni percorso mostra record, badge e milestone. Se capita una ricaduta, fai reset: Since salva il tentativo concluso e ti lascia ripartire con chiarezza.",
+    accent: "#bc5f45"
+  },
+  {
+    icon: LineChart,
+    title: "I tuoi dati restano con te",
+    body: "Since è local-first: conserva i dati sul dispositivo, permette backup JSON e ti lascia personalizzare tema, colore e notifiche dalle impostazioni.",
+    accent: "#2f8f8a"
+  }
+];
+
+function Onboarding({ onClose }) {
+  const [step, setStep] = useState(0);
+  const current = onboardingSteps[step];
+  const Icon = current.icon;
+  const isLast = step === onboardingSteps.length - 1;
+
+  function nextStep() {
+    if (isLast) {
+      onClose();
+      return;
+    }
+    setStep((value) => value + 1);
+  }
+
+  function previousStep() {
+    setStep((value) => Math.max(0, value - 1));
+  }
+
+  return createPortal(
+    <div className="onboarding-overlay" role="presentation">
+      <section className="onboarding-sheet" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" style={{ "--onboarding-accent": current.accent }}>
+        <button className="icon-button onboarding-close" type="button" onClick={onClose} aria-label="Chiudi onboarding">
+          <X size={20} />
+        </button>
+
+        <div className="onboarding-brand">
+          <img src="/logo.png" alt="" />
+          <span>Since</span>
+        </div>
+
+        <div className="onboarding-visual" aria-hidden="true">
+          <span className="onboarding-icon">
+            <Icon size={38} />
+          </span>
+          <div className="onboarding-mini-card">
+            <strong>{step === 0 ? "0" : step === 1 ? "1" : step === 2 ? "7" : "30"}</strong>
+            <span>giorni</span>
+          </div>
+        </div>
+
+        <div className="onboarding-copy">
+          <p className="eyebrow">Primo avvio</p>
+          <h1 id="onboarding-title">{current.title}</h1>
+          <p>{current.body}</p>
+        </div>
+
+        <div className="onboarding-dots" aria-label={`Passaggio ${step + 1} di ${onboardingSteps.length}`}>
+          {onboardingSteps.map((item, index) => (
+            <button
+              key={item.title}
+              type="button"
+              className={index === step ? "active" : ""}
+              onClick={() => setStep(index)}
+              aria-label={`Vai al passaggio ${index + 1}`}
+            />
+          ))}
+        </div>
+
+        <div className="onboarding-actions">
+          <button className="ghost-button" type="button" onClick={step === 0 ? onClose : previousStep}>
+            {step === 0 ? (
+              "Salta"
+            ) : (
+              <>
+                <ChevronLeft size={18} />
+                Indietro
+              </>
+            )}
+          </button>
+          <button className="primary-button" type="button" onClick={nextStep}>
+            {isLast ? "Inizia" : "Avanti"}
+            {!isLast && <ChevronRight size={18} />}
+          </button>
+        </div>
+      </section>
+    </div>,
+    document.body
   );
 }
 
@@ -714,7 +838,7 @@ function RepeatButton({ action, label, children }) {
   );
 }
 
-function SettingsView() {
+function SettingsView({ onOpenOnboarding }) {
   const { settings, updateSetting, exportData, importData } = useSinceStore();
   const themeIndex = ["system", "light", "dark"].indexOf(settings.theme);
 
@@ -784,6 +908,14 @@ function SettingsView() {
         <button className="secondary-button" onClick={requestNotifications}>
           <Bell size={18} />
           {settings.notifications ? "Attive" : "Attiva"}
+        </button>
+      </section>
+
+      <section className="panel settings-panel">
+        <h2>Guida iniziale</h2>
+        <button className="secondary-button" onClick={onOpenOnboarding}>
+          <Sparkles size={18} />
+          Rivedi onboarding
         </button>
       </section>
 
