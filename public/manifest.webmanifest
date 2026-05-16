@@ -1,0 +1,28 @@
+{
+  "name": "Since",
+  "short_name": "Since",
+  "description": "Habit tracker al contrario, local-first e offline.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#f8f2e9",
+  "theme_color": "#f8f2e9",
+  "icons": [
+    {
+      "src": "/logo.png",
+      "sizes": "1024x1024",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nuovo contatore",
+      "short_name": "Nuovo",
+      "description": "Crea un nuovo percorso detox",
+      "url": "/?action=new",
+      "icons": [{ "src": "/logo.png", "sizes": "1024x1024" }]
+    }
+  ]
+}
