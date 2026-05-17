@@ -6,7 +6,16 @@ const defaultSettings = {
   theme: "system",
   accentColor: "#2f6d54",
   notifications: false,
-  onboardingCompleted: false
+  onboardingCompleted: false,
+  securityLock: {
+    enabled: false,
+    pinHash: null,
+    pinSalt: null,
+    pinLength: null,
+    biometricEnabled: false,
+    biometricCredentialId: null,
+    biometricUserId: null
+  }
 };
 
 function formatHabitName(value) {

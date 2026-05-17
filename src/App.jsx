@@ -18,11 +18,14 @@ import {
   Cookie,
   Download,
   Dumbbell,
+  Fingerprint,
   Flame,
   Gamepad2,
   Home,
   HeartPulse,
+  KeyRound,
   LineChart,
+  Lock,
   MessageCircle,
   Monitor,
   Moon,
@@ -32,6 +35,7 @@ import {
   Plus,
   RefreshCcw,
   Settings,
+  ShieldCheck,
   ShoppingBag,
   Smartphone,
   Sparkles,
@@ -101,6 +105,10 @@ function useClock() {
 function App() {
   const { init, ready, settings, view, activeId, counters, updateSetting } = useSinceStore();
   const [onboardingOpen, setOnboardingOpen] = useState(false);
+  const [unlocked, setUnlocked] = useState(false);
+  const [updateRegistration, setUpdateRegistration] = useState(null);
+  const lockInitializedRef = useRef(false);
+  const lockEnabled = Boolean(settings.securityLock?.enabled);
 
   useEffect(() => {
     init();
@@ -111,6 +119,20 @@ function App() {
       setOnboardingOpen(true);
     }
   }, [ready, settings.onboardingCompleted]);
+
+  useEffect(() => {
+    if (!ready) return;
+
+    if (!lockInitializedRef.current) {
+      setUnlocked(!lockEnabled);
+      lockInitializedRef.current = true;
+      return;
+    }
+
+    if (!lockEnabled) {
+      setUnlocked(true);
+    }
+  }, [ready, lockEnabled]);
 
   useEffect(() => {
     const root = document.documentElement;
@@ -136,6 +158,35 @@ function App() {
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
 
+  useEffect(() => {
+    function handleUpdateReady(event) {
+      setUpdateRegistration(event.detail.registration);
+    }
+
+    window.addEventListener("since:update-ready", handleUpdateReady);
+    return () => window.removeEventListener("since:update-ready", handleUpdateReady);
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const params = new URLSearchParams(window.location.search);
+    if (!params.has("simulateUpdate")) return;
+
+    setUpdateRegistration({
+      waiting: {
+        postMessage: () => {
+          const url = new URL(window.location.href);
+          url.searchParams.delete("simulateUpdate");
+          window.location.replace(url);
+        }
+      }
+    });
+  }, []);
+
+  function installUpdate() {
+    updateRegistration?.waiting?.postMessage({ type: "SKIP_WAITING" });
+  }
+
   const activeCounter = counters.find((counter) => counter.id === activeId) || counters[0];
 
   if (!ready) {
@@ -144,6 +195,10 @@ function App() {
         <img src="/logo.png" alt="Since" />
       </main>
     );
+  }
+
+  if (lockEnabled && !unlocked) {
+    return <LockScreen securityLock={settings.securityLock} onUnlock={() => setUnlocked(true)} />;
   }
 
   return (
@@ -159,6 +214,7 @@ function App() {
       </section>
       <BottomNav />
       <FloatingAction />
+      {updateRegistration && <UpdatePrompt onUpdate={installUpdate} onDismiss={() => setUpdateRegistration(null)} />}
       {onboardingOpen && (
         <Onboarding
           onClose={async () => {
@@ -168,6 +224,26 @@ function App() {
         />
       )}
     </main>
+  );
+}
+
+function UpdatePrompt({ onUpdate, onDismiss }) {
+  return (
+    <section className="update-prompt" role="status" aria-live="polite">
+      <div>
+        <strong>Aggiornamento disponibile</strong>
+        <p>Ricarica l'app per usare la nuova versione e aggiornare la cache.</p>
+      </div>
+      <div className="update-actions">
+        <button className="ghost-button" type="button" onClick={onDismiss}>
+          Dopo
+        </button>
+        <button className="primary-button" type="button" onClick={onUpdate}>
+          <RefreshCcw size={18} />
+          Aggiorna
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -275,6 +351,121 @@ function Onboarding({ onClose }) {
       </section>
     </div>,
     document.body
+  );
+}
+
+function LockScreen({ securityLock, onUnlock }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const pinLength = securityLock?.pinLength || 4;
+  const biometricReady = Boolean(securityLock?.biometricEnabled && securityLock?.biometricCredentialId && canUseWebAuthn());
+
+  useEffect(() => {
+    function handleKeyDown(event) {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (/^\d$/.test(event.key)) {
+        event.preventDefault();
+        pressDigit(event.key);
+      }
+      if (event.key === "Backspace" || event.key === "Delete") {
+        event.preventDefault();
+        deleteDigit();
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
+
+  async function unlockWithPin(nextPin = pin) {
+    if (!nextPin) return;
+
+    setBusy(true);
+    setError("");
+    const valid = await verifyPin(nextPin, securityLock);
+    setBusy(false);
+
+    if (valid) {
+      setPin("");
+      onUnlock();
+      return;
+    }
+
+    setError("PIN non corretto.");
+    setPin("");
+  }
+
+  function pressDigit(digit) {
+    if (busy || pin.length >= 8) return;
+    setError("");
+    const nextPin = `${pin}${digit}`;
+    setPin(nextPin);
+    if (nextPin.length >= pinLength) {
+      window.setTimeout(() => unlockWithPin(nextPin), 80);
+    }
+  }
+
+  function deleteDigit() {
+    if (busy) return;
+    setError("");
+    setPin((value) => value.slice(0, -1));
+  }
+
+  async function unlockWithBiometric() {
+    setBusy(true);
+    setError("");
+    try {
+      await authenticateWithBiometric(securityLock.biometricCredentialId);
+      onUnlock();
+    } catch {
+      setError("Autenticazione biometrica non riuscita. Puoi usare il PIN.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <main className="lock-shell">
+      <section className="lock-card" aria-labelledby="lock-title">
+        <img src="/logo.png" alt="" />
+        <div className="lock-copy">
+          <p className="eyebrow">Accesso protetto</p>
+          <h1 id="lock-title">Sblocca Since</h1>
+          <p>I tuoi percorsi restano nascosti finché non confermi il PIN.</p>
+        </div>
+
+        <div className="lock-pin-area" aria-label="Inserisci PIN">
+          <div className="pin-dots" aria-label={`${pin.length} cifre inserite`}>
+            {Array.from({ length: pinLength }).map((_, index) => (
+              <span key={index} className={index < pin.length ? "filled" : ""} />
+            ))}
+          </div>
+          {error && <p className="form-error">{error}</p>}
+          <div className="pin-keypad">
+            {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((digit) => (
+              <button key={digit} type="button" onClick={() => pressDigit(digit)} disabled={busy} aria-label={`Numero ${digit}`}>
+                {digit}
+              </button>
+            ))}
+            <span />
+            <button type="button" onClick={() => pressDigit(0)} disabled={busy} aria-label="Numero 0">
+              0
+            </button>
+            <button type="button" onClick={deleteDigit} disabled={busy || pin.length === 0} aria-label="Cancella">
+              <ChevronLeft size={24} />
+            </button>
+          </div>
+        </div>
+
+        {biometricReady && (
+          <button className="secondary-button full" type="button" onClick={unlockWithBiometric} disabled={busy}>
+            <Fingerprint size={18} />
+            Usa biometria
+          </button>
+        )}
+      </section>
+    </main>
   );
 }
 
@@ -841,6 +1032,15 @@ function RepeatButton({ action, label, children }) {
 function SettingsView({ onOpenOnboarding }) {
   const { settings, updateSetting, exportData, importData } = useSinceStore();
   const themeIndex = ["system", "light", "dark"].indexOf(settings.theme);
+  const securityLock = normalizeSecurityLock(settings.securityLock);
+  const [pinSheet, setPinSheet] = useState(null);
+  const [biometricSupported, setBiometricSupported] = useState(false);
+  const [securityMessage, setSecurityMessage] = useState("");
+  const [securityBusy, setSecurityBusy] = useState(false);
+
+  useEffect(() => {
+    checkBiometricSupport().then(setBiometricSupported);
+  }, []);
 
   async function requestNotifications() {
     if (!("Notification" in window)) return;
@@ -863,6 +1063,64 @@ function SettingsView({ onOpenOnboarding }) {
     if (!file) return;
     const payload = JSON.parse(await file.text());
     await importData(payload);
+  }
+
+  async function saveSecurityLock(nextLock) {
+    await updateSetting("securityLock", normalizeSecurityLock(nextLock));
+  }
+
+  async function enablePin(pin) {
+    const pinRecord = await createPinRecord(pin);
+    await saveSecurityLock({ ...securityLock, ...pinRecord, enabled: true });
+    setSecurityMessage("Blocco con PIN attivato.");
+  }
+
+  async function changePin(pin) {
+    const pinRecord = await createPinRecord(pin);
+    await saveSecurityLock({ ...securityLock, ...pinRecord, enabled: true });
+    setSecurityMessage("PIN aggiornato.");
+  }
+
+  async function disableLock() {
+    await saveSecurityLock({
+      enabled: false,
+      pinHash: null,
+      pinSalt: null,
+      pinLength: null,
+      biometricEnabled: false,
+      biometricCredentialId: null,
+      biometricUserId: null
+    });
+    setSecurityMessage("Blocco disattivato.");
+  }
+
+  async function enableBiometric() {
+    setSecurityBusy(true);
+    setSecurityMessage("");
+    try {
+      const credential = await registerBiometricCredential();
+      await saveSecurityLock({
+        ...securityLock,
+        biometricEnabled: true,
+        biometricCredentialId: credential.credentialId,
+        biometricUserId: credential.userId
+      });
+      setSecurityMessage("Biometria attivata su questo dispositivo.");
+    } catch {
+      setSecurityMessage("Biometria non disponibile o registrazione annullata.");
+    } finally {
+      setSecurityBusy(false);
+    }
+  }
+
+  async function disableBiometric() {
+    await saveSecurityLock({
+      ...securityLock,
+      biometricEnabled: false,
+      biometricCredentialId: null,
+      biometricUserId: null
+    });
+    setSecurityMessage("Biometria disattivata.");
   }
 
   return (
@@ -912,6 +1170,45 @@ function SettingsView({ onOpenOnboarding }) {
       </section>
 
       <section className="panel settings-panel">
+        <div className="settings-panel-head">
+          <div>
+            <h2>Privacy</h2>
+            <p>{securityLock.enabled ? "PIN richiesto all'apertura dell'app." : "Proteggi l'accesso ai tuoi percorsi."}</p>
+          </div>
+          <span className={securityLock.enabled ? "status-pill enabled" : "status-pill"}>
+            {securityLock.enabled ? "Attivo" : "Non attivo"}
+          </span>
+        </div>
+        <div className="security-actions">
+          {securityLock.enabled ? (
+            <>
+              <button className="secondary-button" onClick={() => setPinSheet("change")}>
+                <KeyRound size={18} />
+                Cambia PIN
+              </button>
+              <button className="ghost-button danger" onClick={() => setPinSheet("disable")}>
+                <Lock size={18} />
+                Disattiva blocco
+              </button>
+            </>
+          ) : (
+            <button className="secondary-button" onClick={() => setPinSheet("enable")}>
+              <ShieldCheck size={18} />
+              Attiva PIN
+            </button>
+          )}
+          {securityLock.enabled && biometricSupported && (
+            <button className="secondary-button" onClick={securityLock.biometricEnabled ? disableBiometric : enableBiometric} disabled={securityBusy}>
+              <Fingerprint size={18} />
+              {securityLock.biometricEnabled ? "Disattiva biometria" : "Attiva biometria"}
+            </button>
+          )}
+        </div>
+        {securityLock.enabled && !biometricSupported && <p className="settings-note">Biometria non disponibile in questo browser o dispositivo.</p>}
+        {securityMessage && <p className="settings-note">{securityMessage}</p>}
+      </section>
+
+      <section className="panel settings-panel">
         <h2>Guida iniziale</h2>
         <button className="secondary-button" onClick={onOpenOnboarding}>
           <Sparkles size={18} />
@@ -933,7 +1230,138 @@ function SettingsView({ onOpenOnboarding }) {
           </label>
         </div>
       </section>
+
+      {pinSheet && (
+        <PinLockSheet
+          mode={pinSheet}
+          securityLock={securityLock}
+          onClose={() => setPinSheet(null)}
+          onEnable={enablePin}
+          onChange={changePin}
+          onDisable={disableLock}
+        />
+      )}
     </div>
+  );
+}
+
+function PinLockSheet({ mode, securityLock, onClose, onEnable, onChange, onDisable }) {
+  const [currentPin, setCurrentPin] = useState("");
+  const [pin, setPin] = useState("");
+  const [confirmPin, setConfirmPin] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const needsCurrentPin = mode === "change" || mode === "disable";
+  const needsNewPin = mode === "enable" || mode === "change";
+  const title = mode === "enable" ? "Attiva PIN" : mode === "change" ? "Cambia PIN" : "Disattiva blocco";
+
+  async function submit(event) {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+
+    if (needsCurrentPin) {
+      const currentIsValid = await verifyPin(currentPin, securityLock);
+      if (!currentIsValid) {
+        setError("Il PIN attuale non è corretto.");
+        setBusy(false);
+        return;
+      }
+    }
+
+    if (needsNewPin) {
+      if (pin.length < 4) {
+        setError("Scegli un PIN di almeno 4 cifre.");
+        setBusy(false);
+        return;
+      }
+
+      if (pin !== confirmPin) {
+        setError("I PIN inseriti non coincidono.");
+        setBusy(false);
+        return;
+      }
+    }
+
+    try {
+      if (mode === "enable") await onEnable(pin);
+      if (mode === "change") await onChange(pin);
+      if (mode === "disable") await onDisable();
+      onClose();
+    } catch {
+      setError("Non sono riuscito ad aggiornare il blocco. Riprova.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return createPortal(
+    <div className="picker-overlay" role="presentation" onClick={onClose}>
+      <section className="pin-sheet" role="dialog" aria-modal="true" aria-labelledby="pin-sheet-title" onClick={(event) => event.stopPropagation()}>
+        <div className="sheet-handle" />
+        <div className="pin-sheet-icon">
+          <Lock size={24} />
+        </div>
+        <div className="confirm-copy">
+          <h2 id="pin-sheet-title">{title}</h2>
+          <p>{mode === "disable" ? "Inserisci il PIN attuale per rimuovere la protezione." : "Usa da 4 a 8 cifre. Ti servirà all'apertura dell'app."}</p>
+        </div>
+
+        <form className="pin-form" onSubmit={submit}>
+          {needsCurrentPin && (
+            <label>
+              PIN attuale
+              <input
+                value={currentPin}
+                onChange={(event) => setCurrentPin(onlyPinDigits(event.target.value))}
+                inputMode="numeric"
+                type="password"
+                autoComplete="current-password"
+                maxLength={8}
+              />
+            </label>
+          )}
+          {needsNewPin && (
+            <>
+              <label>
+                Nuovo PIN
+                <input
+                  value={pin}
+                  onChange={(event) => setPin(onlyPinDigits(event.target.value))}
+                  inputMode="numeric"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={4}
+                  maxLength={8}
+                />
+              </label>
+              <label>
+                Conferma PIN
+                <input
+                  value={confirmPin}
+                  onChange={(event) => setConfirmPin(onlyPinDigits(event.target.value))}
+                  inputMode="numeric"
+                  type="password"
+                  autoComplete="new-password"
+                  minLength={4}
+                  maxLength={8}
+                />
+              </label>
+            </>
+          )}
+          {error && <p className="form-error">{error}</p>}
+          <div className="confirm-actions">
+            <button className="secondary-button" type="button" onClick={onClose}>
+              Annulla
+            </button>
+            <button className={mode === "disable" ? "primary-button danger-button" : "primary-button"} type="submit" disabled={busy}>
+              {mode === "disable" ? "Disattiva" : "Salva"}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>,
+    document.body
   );
 }
 
@@ -961,6 +1389,129 @@ function FloatingAction() {
       <Plus size={26} />
     </button>
   );
+}
+
+function normalizeSecurityLock(lock = {}) {
+  return {
+    enabled: Boolean(lock.enabled),
+    pinHash: lock.pinHash || null,
+    pinSalt: lock.pinSalt || null,
+    pinLength: lock.pinLength || null,
+    biometricEnabled: Boolean(lock.biometricEnabled),
+    biometricCredentialId: lock.biometricCredentialId || null,
+    biometricUserId: lock.biometricUserId || null
+  };
+}
+
+function onlyPinDigits(value) {
+  return value.replace(/\D/g, "").slice(0, 8);
+}
+
+async function createPinRecord(pin) {
+  const salt = randomBase64Url(16);
+  return {
+    pinSalt: salt,
+    pinHash: await hashPin(pin, salt),
+    pinLength: pin.length
+  };
+}
+
+async function verifyPin(pin, lock) {
+  if (!lock?.pinHash || !lock?.pinSalt) return false;
+  return (await hashPin(pin, lock.pinSalt)) === lock.pinHash;
+}
+
+async function hashPin(pin, salt) {
+  const data = new TextEncoder().encode(`${salt}:${pin}`);
+  const digest = await crypto.subtle.digest("SHA-256", data);
+  return bufferToBase64Url(digest);
+}
+
+function canUseWebAuthn() {
+  return Boolean(window.isSecureContext && window.PublicKeyCredential && navigator.credentials);
+}
+
+async function checkBiometricSupport() {
+  if (!canUseWebAuthn() || !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return false;
+  try {
+    return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
+  } catch {
+    return false;
+  }
+}
+
+async function registerBiometricCredential() {
+  if (!(await checkBiometricSupport())) throw new Error("Biometric authentication is not available.");
+
+  const userId = crypto.getRandomValues(new Uint8Array(16));
+  const credential = await navigator.credentials.create({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rp: { name: "Since" },
+      user: {
+        id: userId,
+        name: "since-local-user",
+        displayName: "Since"
+      },
+      pubKeyCredParams: [
+        { type: "public-key", alg: -7 },
+        { type: "public-key", alg: -257 }
+      ],
+      authenticatorSelection: {
+        authenticatorAttachment: "platform",
+        residentKey: "preferred",
+        userVerification: "required"
+      },
+      timeout: 60000,
+      attestation: "none"
+    }
+  });
+
+  return {
+    credentialId: bufferToBase64Url(credential.rawId),
+    userId: bufferToBase64Url(userId)
+  };
+}
+
+async function authenticateWithBiometric(credentialId) {
+  if (!credentialId || !canUseWebAuthn()) throw new Error("Biometric authentication is not available.");
+
+  return navigator.credentials.get({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      allowCredentials: [
+        {
+          type: "public-key",
+          id: base64UrlToBuffer(credentialId)
+        }
+      ],
+      userVerification: "required",
+      timeout: 60000
+    }
+  });
+}
+
+function randomBase64Url(length) {
+  return bufferToBase64Url(crypto.getRandomValues(new Uint8Array(length)));
+}
+
+function bufferToBase64Url(buffer) {
+  const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
+  let value = "";
+  bytes.forEach((byte) => {
+    value += String.fromCharCode(byte);
+  });
+  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+}
+
+function base64UrlToBuffer(value) {
+  const base64 = value.replace(/-/g, "+").replace(/_/g, "/").padEnd(Math.ceil(value.length / 4) * 4, "=");
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return bytes;
 }
 
 function toInputDate(value) {
