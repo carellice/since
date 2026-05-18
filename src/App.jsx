@@ -541,6 +541,18 @@ function Dashboard() {
   const now = useClock();
   const totalDays = counters.reduce((sum, counter) => sum + daysBetween(counter.startedAt, now), 0);
   const best = counters.reduce((max, counter) => Math.max(max, counter.bestDays || 0, daysBetween(counter.startedAt, now)), 0);
+  const longestCounter = counters.reduce((longest, counter) => {
+    const days = daysBetween(counter.startedAt, now);
+    if (!longest || days > longest.days) return { ...counter, days };
+    return longest;
+  }, null);
+  const nextGoal = counters
+    .map((counter) => {
+      const days = daysBetween(counter.startedAt, now);
+      const next = nextMilestone(days);
+      return { counter, missing: Math.max(0, next.days - days), label: next.label };
+    })
+    .sort((a, b) => a.missing - b.missing)[0];
 
   return (
     <div className="screen">
@@ -552,18 +564,15 @@ function Dashboard() {
       </header>
 
       <section className="summary-band">
-        <div>
-          <span>Giorni puliti</span>
-          <strong>{totalDays}</strong>
-        </div>
-        <div>
-          <span>Percorsi</span>
-          <strong>{counters.length}</strong>
-        </div>
-        <div>
-          <span>Record</span>
-          <strong>{best}</strong>
-        </div>
+        <SummaryMetric icon={Flame} label="Giorni puliti" value={totalDays} note={counters.length ? "Totale dei percorsi attivi" : "Crea il primo percorso"} tone="#3f7d58" />
+        <SummaryMetric
+          icon={Target}
+          label="Percorsi"
+          value={counters.length}
+          note={nextGoal ? `${nextGoal.missing}g a ${nextGoal.label}` : "Nessun traguardo in corso"}
+          tone="#5378a7"
+        />
+        <SummaryMetric icon={Trophy} label="Record" value={best} note={longestCounter ? `${longestCounter.name}: ${longestCounter.days}g` : "Il tuo miglior streak"} tone="#bc5f45" />
       </section>
 
       {counters.length === 0 ? (
@@ -576,6 +585,21 @@ function Dashboard() {
         </section>
       )}
     </div>
+  );
+}
+
+function SummaryMetric({ icon: Icon, label, value, note, tone }) {
+  return (
+    <article className="summary-metric" style={{ "--metric-tone": tone, "--metric-ink": readableInk(tone) }}>
+      <div className="summary-metric-head">
+        <span className="summary-icon">
+          <Icon size={18} />
+        </span>
+        <span>{label}</span>
+      </div>
+      <strong>{value}</strong>
+      <p>{note}</p>
+    </article>
   );
 }
 
