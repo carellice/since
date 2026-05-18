@@ -276,6 +276,7 @@ const onboardingSteps = [
 
 function Onboarding({ onClose }) {
   const [step, setStep] = useState(0);
+  const [direction, setDirection] = useState(1);
   const current = onboardingSteps[step];
   const Icon = current.icon;
   const isLast = step === onboardingSteps.length - 1;
@@ -285,16 +286,39 @@ function Onboarding({ onClose }) {
       onClose();
       return;
     }
+    setDirection(1);
     setStep((value) => value + 1);
   }
 
   function previousStep() {
+    setDirection(-1);
     setStep((value) => Math.max(0, value - 1));
+  }
+
+  function goToStep(index) {
+    if (index === step) return;
+    setDirection(index > step ? 1 : -1);
+    setStep(index);
   }
 
   return createPortal(
     <div className="onboarding-overlay" role="presentation">
-      <section className="onboarding-sheet" role="dialog" aria-modal="true" aria-labelledby="onboarding-title" style={{ "--onboarding-accent": current.accent }}>
+      <section
+        className="onboarding-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="onboarding-title"
+        style={{
+          "--onboarding-accent": current.accent,
+          "--step-direction": direction,
+          "--step-offset": `${direction * 34}px`,
+          "--copy-offset": `${direction * 22}px`,
+          "--icon-rotate": `${direction * -10}deg`,
+          "--mini-offset": `${direction * 22}px`,
+          "--progress-offset": `${direction * -18}px`,
+          "--onboarding-progress": `${((step + 1) / onboardingSteps.length) * 100}%`
+        }}
+      >
         <button className="icon-button onboarding-close" type="button" onClick={onClose} aria-label="Chiudi onboarding">
           <X size={20} />
         </button>
@@ -304,7 +328,9 @@ function Onboarding({ onClose }) {
           <span>Since</span>
         </div>
 
-        <div className="onboarding-visual" aria-hidden="true">
+        <div className="onboarding-visual" aria-hidden="true" key={`visual-${step}`}>
+          <span className="onboarding-orbit one" />
+          <span className="onboarding-orbit two" />
           <span className="onboarding-icon">
             <Icon size={38} />
           </span>
@@ -312,9 +338,13 @@ function Onboarding({ onClose }) {
             <strong>{step === 0 ? "0" : step === 1 ? "1" : step === 2 ? "7" : "30"}</strong>
             <span>giorni</span>
           </div>
+          <div className="onboarding-progress-card">
+            <span />
+            <strong>{step + 1}/{onboardingSteps.length}</strong>
+          </div>
         </div>
 
-        <div className="onboarding-copy">
+        <div className="onboarding-copy" key={`copy-${step}`}>
           <p className="eyebrow">Primo avvio</p>
           <h1 id="onboarding-title">{current.title}</h1>
           <p>{current.body}</p>
@@ -326,7 +356,7 @@ function Onboarding({ onClose }) {
               key={item.title}
               type="button"
               className={index === step ? "active" : ""}
-              onClick={() => setStep(index)}
+              onClick={() => goToStep(index)}
               aria-label={`Vai al passaggio ${index + 1}`}
             />
           ))}
