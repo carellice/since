@@ -734,10 +734,19 @@ function Detail({ counter }) {
 }
 
 function ConfirmSheet({ title, body, confirmLabel, onCancel, onConfirm }) {
+  const sheet = useBottomSheetDismiss(onCancel);
+
   return createPortal(
-    <div className="picker-overlay" role="presentation" onClick={onCancel}>
-      <section className="confirm-sheet" role="dialog" aria-modal="true" aria-label={title} onClick={(event) => event.stopPropagation()}>
-        <div className="sheet-handle" />
+    <div className={`picker-overlay ${sheet.closing ? "sheet-closing" : ""}`} role="presentation" onClick={sheet.requestClose}>
+      <section
+        className={`confirm-sheet ${sheet.entered ? "sheet-entered" : ""} ${sheet.dragging ? "sheet-dragging" : ""} ${sheet.closing ? "sheet-closing" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        ref={sheet.sheetRef}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sheet-handle" {...sheet.dragHandleProps} />
         <div className="confirm-icon">
           <X size={24} />
         </div>
@@ -746,7 +755,7 @@ function ConfirmSheet({ title, body, confirmLabel, onCancel, onConfirm }) {
           <p>{body}</p>
         </div>
         <div className="confirm-actions">
-          <button className="secondary-button" type="button" onClick={onCancel}>
+          <button className="secondary-button" type="button" onClick={sheet.requestClose}>
             Annulla
           </button>
           <button className="primary-button danger-button" type="button" onClick={onConfirm}>
@@ -757,6 +766,113 @@ function ConfirmSheet({ title, body, confirmLabel, onCancel, onConfirm }) {
     </div>,
     document.body
   );
+}
+
+function useBottomSheetDismiss(onClose) {
+  const [closing, setClosing] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [entered, setEntered] = useState(false);
+  const sheetRef = useRef(null);
+  const closeRef = useRef(onClose);
+  const startYRef = useRef(0);
+  const dragYRef = useRef(0);
+  const lastYRef = useRef(0);
+  const lastTimeRef = useRef(0);
+  const velocityRef = useRef(0);
+  const activeRef = useRef(false);
+  const closingRef = useRef(false);
+
+  useEffect(() => {
+    closeRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const id = window.setTimeout(() => setEntered(true), 440);
+    return () => window.clearTimeout(id);
+  }, []);
+
+  function requestClose() {
+    if (closingRef.current) return;
+    closingRef.current = true;
+    setClosing(true);
+    window.setTimeout(() => closeRef.current(), 320);
+  }
+
+  function stopDragListeners() {
+    window.removeEventListener("pointermove", handlePointerMove);
+    window.removeEventListener("pointerup", handlePointerUp);
+    window.removeEventListener("pointercancel", handlePointerUp);
+  }
+
+  function setSheetDrag(value) {
+    dragYRef.current = value;
+    sheetRef.current?.style.setProperty("--sheet-drag", `${value}px`);
+  }
+
+  function handlePointerMove(event) {
+    if (!activeRef.current) return;
+    event.preventDefault();
+    const nextY = Math.max(0, event.clientY - startYRef.current);
+    const now = performance.now();
+    velocityRef.current = (nextY - lastYRef.current) / Math.max(1, now - lastTimeRef.current);
+    lastYRef.current = nextY;
+    lastTimeRef.current = now;
+    setSheetDrag(nextY);
+  }
+
+  function handlePointerUp() {
+    if (!activeRef.current) return;
+    activeRef.current = false;
+    stopDragListeners();
+    setDragging(false);
+
+    if (dragYRef.current > 120 || (dragYRef.current > 42 && velocityRef.current > 1.15)) {
+      requestClose();
+      return;
+    }
+
+    dragYRef.current = 0;
+    velocityRef.current = 0;
+    sheetRef.current?.style.setProperty("--sheet-drag", "0px");
+  }
+
+  function startDrag(event) {
+    if (closingRef.current || event.pointerType === "mouse" && event.button !== 0) return;
+    event.preventDefault();
+    activeRef.current = true;
+    setEntered(true);
+    startYRef.current = event.clientY;
+    dragYRef.current = 0;
+    lastYRef.current = 0;
+    lastTimeRef.current = performance.now();
+    velocityRef.current = 0;
+    setDragging(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp);
+    window.addEventListener("pointercancel", handlePointerUp);
+  }
+
+  useEffect(
+    () => () => {
+      stopDragListeners();
+    },
+    []
+  );
+
+  return {
+    closing,
+    dragging,
+    entered,
+    requestClose,
+    sheetRef,
+    dragHandleProps: {
+      onPointerDown: startDrag,
+      role: "button",
+      "aria-label": "Trascina verso il basso per chiudere",
+      tabIndex: 0
+    }
+  };
 }
 
 function Metric({ title, value, icon: Icon }) {
@@ -906,10 +1022,11 @@ function DateTimeSheet({ mode, value, onClose, onChange }) {
   const [visibleMonth, setVisibleMonth] = useState(() => new Date(selected.getFullYear(), selected.getMonth(), 1));
   const selectedDate = value.slice(0, 10);
   const selectedTime = value.slice(11, 16);
+  const sheet = useBottomSheetDismiss(onClose);
 
   function updateDate(date) {
     onChange(`${toDateInput(date)}T${selectedTime}`);
-    onClose();
+    sheet.requestClose();
   }
 
   function updateTime(hours, minutes) {
@@ -922,9 +1039,16 @@ function DateTimeSheet({ mode, value, onClose, onChange }) {
   const minutes = Number(selectedTime.slice(3, 5));
 
   return createPortal(
-    <div className="picker-overlay" role="presentation" onClick={onClose}>
-      <section className="picker-sheet" role="dialog" aria-modal="true" aria-label={mode === "date" ? "Seleziona data" : "Seleziona ora"} onClick={(event) => event.stopPropagation()}>
-        <div className="sheet-handle" />
+    <div className={`picker-overlay ${sheet.closing ? "sheet-closing" : ""}`} role="presentation" onClick={sheet.requestClose}>
+      <section
+        className={`picker-sheet ${sheet.entered ? "sheet-entered" : ""} ${sheet.dragging ? "sheet-dragging" : ""} ${sheet.closing ? "sheet-closing" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label={mode === "date" ? "Seleziona data" : "Seleziona ora"}
+        ref={sheet.sheetRef}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sheet-handle" {...sheet.dragHandleProps} />
         {mode === "date" ? (
           <>
             <header className="picker-header">
@@ -968,7 +1092,7 @@ function DateTimeSheet({ mode, value, onClose, onChange }) {
               <TimeColumn label="Ore" value={hours} onUp={() => updateTime(hours + 1, minutes)} onDown={() => updateTime(hours - 1, minutes)} />
               <TimeColumn label="Minuti" value={minutes} onUp={() => updateTime(hours, minutes + 1)} onDown={() => updateTime(hours, minutes - 1)} />
             </div>
-            <button type="button" className="primary-button full" onClick={onClose}>
+            <button type="button" className="primary-button full" onClick={sheet.requestClose}>
               <Check size={18} />
               Conferma
             </button>
@@ -1262,6 +1386,7 @@ function PinLockSheet({ mode, securityLock, onClose, onEnable, onChange, onDisab
   const [confirmPin, setConfirmPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const sheet = useBottomSheetDismiss(onClose);
   const needsCurrentPin = mode === "change" || mode === "disable";
   const needsNewPin = mode === "enable" || mode === "change";
   const title = mode === "enable" ? "Attiva PIN" : mode === "change" ? "Cambia PIN" : "Disattiva blocco";
@@ -1298,7 +1423,7 @@ function PinLockSheet({ mode, securityLock, onClose, onEnable, onChange, onDisab
       if (mode === "enable") await onEnable(pin);
       if (mode === "change") await onChange(pin);
       if (mode === "disable") await onDisable();
-      onClose();
+      sheet.requestClose();
     } catch {
       setError("Non sono riuscito ad aggiornare il blocco. Riprova.");
     } finally {
@@ -1307,9 +1432,16 @@ function PinLockSheet({ mode, securityLock, onClose, onEnable, onChange, onDisab
   }
 
   return createPortal(
-    <div className="picker-overlay" role="presentation" onClick={onClose}>
-      <section className="pin-sheet" role="dialog" aria-modal="true" aria-labelledby="pin-sheet-title" onClick={(event) => event.stopPropagation()}>
-        <div className="sheet-handle" />
+    <div className={`picker-overlay ${sheet.closing ? "sheet-closing" : ""}`} role="presentation" onClick={sheet.requestClose}>
+      <section
+        className={`pin-sheet ${sheet.entered ? "sheet-entered" : ""} ${sheet.dragging ? "sheet-dragging" : ""} ${sheet.closing ? "sheet-closing" : ""}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="pin-sheet-title"
+        ref={sheet.sheetRef}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="sheet-handle" {...sheet.dragHandleProps} />
         <div className="pin-sheet-icon">
           <Lock size={24} />
         </div>
@@ -1362,7 +1494,7 @@ function PinLockSheet({ mode, securityLock, onClose, onEnable, onChange, onDisab
           )}
           {error && <p className="form-error">{error}</p>}
           <div className="confirm-actions">
-            <button className="secondary-button" type="button" onClick={onClose}>
+            <button className="secondary-button" type="button" onClick={sheet.requestClose}>
               Annulla
             </button>
             <button className={mode === "disable" ? "primary-button danger-button" : "primary-button"} type="submit" disabled={busy}>
