@@ -358,8 +358,16 @@ function LockScreen({ securityLock, onUnlock }) {
   const [pin, setPin] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [biometricPrompting, setBiometricPrompting] = useState(false);
+  const biometricAttemptedRef = useRef(false);
   const pinLength = securityLock?.pinLength || 4;
   const biometricReady = Boolean(securityLock?.biometricEnabled && securityLock?.biometricCredentialId && canUseWebAuthn());
+
+  useEffect(() => {
+    if (!biometricReady || biometricAttemptedRef.current) return;
+    biometricAttemptedRef.current = true;
+    unlockWithBiometric();
+  }, [biometricReady]);
 
   useEffect(() => {
     function handleKeyDown(event) {
@@ -414,6 +422,7 @@ function LockScreen({ securityLock, onUnlock }) {
 
   async function unlockWithBiometric() {
     setBusy(true);
+    setBiometricPrompting(true);
     setError("");
     try {
       await authenticateWithBiometric(securityLock.biometricCredentialId);
@@ -422,6 +431,7 @@ function LockScreen({ securityLock, onUnlock }) {
       setError("Autenticazione biometrica non riuscita. Puoi usare il PIN.");
     } finally {
       setBusy(false);
+      setBiometricPrompting(false);
     }
   }
 
@@ -436,6 +446,7 @@ function LockScreen({ securityLock, onUnlock }) {
         </div>
 
         <div className="lock-pin-area" aria-label="Inserisci PIN">
+          {biometricPrompting && <p className="settings-note center">Conferma con biometria per sbloccare.</p>}
           <div className="pin-dots" aria-label={`${pin.length} cifre inserite`}>
             {Array.from({ length: pinLength }).map((_, index) => (
               <span key={index} className={index < pin.length ? "filled" : ""} />

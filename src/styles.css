@@ -1428,6 +1428,11 @@ textarea:focus {
   line-height: 1.38;
 }
 
+.settings-note.center {
+  margin-top: 0;
+  text-align: center;
+}
+
 .status-pill {
   flex: 0 0 auto;
   padding: 7px 10px;
