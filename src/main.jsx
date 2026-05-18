@@ -26,6 +26,8 @@ if ("serviceWorker" in navigator) {
           window.dispatchEvent(new CustomEvent("since:update-ready", { detail: { registration } }));
         }
 
+        registration.update().catch(() => {});
+
         if (registration.waiting && navigator.serviceWorker.controller) {
           notifyUpdateReady();
         }
@@ -39,6 +41,12 @@ if ("serviceWorker" in navigator) {
               notifyUpdateReady();
             }
           });
+        });
+
+        document.addEventListener("visibilitychange", () => {
+          if (document.visibilityState === "visible") {
+            registration.update().catch(() => {});
+          }
         });
       })
       .catch(() => {});
