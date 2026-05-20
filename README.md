@@ -8,6 +8,8 @@
 
 Since ti aiuta a vedere quanto lontano sei arrivato da un'abitudine che vuoi lasciare alle spalle. Crea un percorso, scegli un colore, imposta il momento di inizio e lascia che l'app tenga traccia dei tuoi progressi, dei record e dei traguardi raggiunti.
 
+Disponibile come PWA e come app Android. Gli APK verranno pubblicati nelle [GitHub Releases](https://github.com/carellice/since-codex/releases).
+
 ## Perche Ti Piacera
 
 - **Conta i giorni da cui resisti**  
@@ -33,7 +35,7 @@ Since ti aiuta a vedere quanto lontano sei arrivato da un'abitudine che vuoi las
 
 ## Pensata Come Un'App Nativa
 
-Since e progettata per sentirsi naturale su mobile:
+Since e progettata per sentirsi naturale su mobile, sia installata come PWA sia come app Android:
 
 - bottom navigation compatta
 - FAB per creare nuovi percorsi
@@ -42,6 +44,11 @@ Since e progettata per sentirsi naturale su mobile:
 - supporto tema chiaro, scuro e sistema
 - colore principale personalizzabile
 - testo non selezionabile per un'esperienza piu app-like
+
+## Download
+
+- **Web/PWA**: usa Since dal browser su [sincehabitcodex.netlify.app](https://sincehabitcodex.netlify.app/) e installala come app quando il browser lo supporta.
+- **Android**: scarica l'APK dalla pagina [GitHub Releases](https://github.com/carellice/since-codex/releases) e installalo manualmente sul dispositivo.
 
 ## Privacy
 
@@ -64,7 +71,7 @@ I tuoi dati restano locali. Since non richiede login, non invia i tuoi percorsi 
 | Personalizzazione | Icone, colori, colore app, tema |
 | Storico | Reset con note, cronologia tentativi, record massimo |
 | Motivazione | Milestone, badge, progressi |
-| Sistema | PWA, offline mode, manifest, service worker |
+| Sistema | PWA, app Android, offline mode, manifest, service worker |
 | Dati | IndexedDB, import/export JSON |
 
 ## Avvio Locale
@@ -95,6 +102,7 @@ Since e costruita con:
 - Zustand
 - IndexedDB
 - Lucide Icons
+- Capacitor
 - PWA Manifest
 - Service Worker
 
