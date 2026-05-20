@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { App as CapacitorApp } from "@capacitor/app";
+import { Capacitor, registerPlugin } from "@capacitor/core";
+import { LocalNotifications } from "@capacitor/local-notifications";
+import { StatusBar, Style as StatusBarStyle } from "@capacitor/status-bar";
 import {
   Bell,
   Beer,
@@ -87,6 +91,7 @@ const iconMap = {
 };
 
 const accentOptions = ["#2f6d54", "#2f8f8a", "#5378a7", "#5f73d9", "#9a6fb0", "#b84a62", "#bc5f45", "#cc8b2c"];
+const SinceBiometrics = registerPlugin("SinceBiometrics");
 
 function HabitIcon({ name, size = 22 }) {
   const Icon = iconMap[name] || Sparkles;
@@ -109,10 +114,16 @@ function App() {
   const [updateRegistration, setUpdateRegistration] = useState(null);
   const lockInitializedRef = useRef(false);
   const lockEnabled = Boolean(settings.securityLock?.enabled);
+  const isNativeAndroid = Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
 
   useEffect(() => {
     init();
   }, [init]);
+
+  useEffect(() => {
+    document.documentElement.classList.toggle("capacitor", Capacitor.isNativePlatform());
+    document.documentElement.classList.toggle("android", isNativeAndroid);
+  }, [isNativeAndroid]);
 
   useEffect(() => {
     if (ready && !settings.onboardingCompleted) {
@@ -139,6 +150,14 @@ function App() {
     root.dataset.theme = settings.theme;
     root.style.setProperty("--primary", settings.accentColor || "#2f6d54");
     root.style.setProperty("--primary-ink", readableInk(settings.accentColor || "#2f6d54"));
+
+    if (Capacitor.isNativePlatform()) {
+      const prefersDark = window.matchMedia?.("(prefers-color-scheme: dark)").matches;
+      const isDarkTheme = settings.theme === "dark" || (settings.theme === "system" && prefersDark);
+      StatusBar.setOverlaysWebView({ overlay: false }).catch(() => {});
+      StatusBar.setBackgroundColor({ color: isDarkTheme ? "#151814" : "#f7f1e9" }).catch(() => {});
+      StatusBar.setStyle({ style: isDarkTheme ? StatusBarStyle.Dark : StatusBarStyle.Light }).catch(() => {});
+    }
   }, [settings.theme, settings.accentColor]);
 
   useEffect(() => {
@@ -157,6 +176,38 @@ function App() {
     window.addEventListener("popstate", handlePopState);
     return () => window.removeEventListener("popstate", handlePopState);
   }, []);
+
+  useEffect(() => {
+    if (!Capacitor.isNativePlatform()) return undefined;
+
+    let listener;
+    CapacitorApp.addListener("backButton", ({ canGoBack }) => {
+      const state = useSinceStore.getState();
+
+      if (onboardingOpen) {
+        setOnboardingOpen(false);
+        updateSetting("onboardingCompleted", true);
+        return;
+      }
+
+      if (state.view !== "dashboard") {
+        if (canGoBack && window.history.length > 1) {
+          window.history.back();
+        } else {
+          state.setView("dashboard");
+        }
+        return;
+      }
+
+      CapacitorApp.minimizeApp();
+    }).then((handle) => {
+      listener = handle;
+    });
+
+    return () => {
+      listener?.remove();
+    };
+  }, [onboardingOpen, updateSetting]);
 
   useEffect(() => {
     function handleUpdateReady(event) {
@@ -391,7 +442,7 @@ function LockScreen({ securityLock, onUnlock }) {
   const [biometricPrompting, setBiometricPrompting] = useState(false);
   const biometricAttemptedRef = useRef(false);
   const pinLength = securityLock?.pinLength || 4;
-  const biometricReady = Boolean(securityLock?.biometricEnabled && securityLock?.biometricCredentialId && canUseWebAuthn());
+  const biometricReady = Boolean(securityLock?.biometricEnabled && (isNativeAndroid() || (securityLock?.biometricCredentialId && canUseWebAuthn())));
 
   useEffect(() => {
     if (!biometricReady || biometricAttemptedRef.current) return;
@@ -1232,6 +1283,45 @@ function SettingsView({ onOpenOnboarding }) {
   }, []);
 
   async function requestNotifications() {
+    if (Capacitor.isNativePlatform()) {
+      try {
+        let permission = await LocalNotifications.checkPermissions();
+        if (permission.display !== "granted") {
+          permission = await LocalNotifications.requestPermissions();
+        }
+
+        const granted = permission.display === "granted";
+        await updateSetting("notifications", granted);
+
+        if (granted && Capacitor.getPlatform() === "android") {
+          await LocalNotifications.createChannel({
+            id: "since-reminders",
+            name: "Since",
+            description: "Promemoria e aggiornamenti di Since",
+            importance: 4,
+            visibility: 1,
+            lights: true,
+            vibration: true
+          });
+
+          await LocalNotifications.schedule({
+            notifications: [
+              {
+                id: 1001,
+                title: "Notifiche attive",
+                body: "Since potra inviarti promemoria da questo dispositivo.",
+                schedule: { at: new Date(Date.now() + 1500) },
+                channelId: "since-reminders"
+              }
+            ]
+          });
+        }
+      } catch {
+        await updateSetting("notifications", false);
+      }
+      return;
+    }
+
     if (!("Notification" in window)) return;
     const permission = await Notification.requestPermission();
     updateSetting("notifications", permission === "granted");
@@ -1629,6 +1719,15 @@ function canUseWebAuthn() {
 }
 
 async function checkBiometricSupport() {
+  if (isNativeAndroid()) {
+    try {
+      const result = await SinceBiometrics.isAvailable();
+      return Boolean(result.available);
+    } catch {
+      return false;
+    }
+  }
+
   if (!canUseWebAuthn() || !PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable) return false;
   try {
     return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable();
@@ -1638,6 +1737,14 @@ async function checkBiometricSupport() {
 }
 
 async function registerBiometricCredential() {
+  if (isNativeAndroid()) {
+    await authenticateWithBiometric();
+    return {
+      credentialId: "android-native",
+      userId: "android-native"
+    };
+  }
+
   if (!(await checkBiometricSupport())) throw new Error("Biometric authentication is not available.");
 
   const userId = crypto.getRandomValues(new Uint8Array(16));
@@ -1671,6 +1778,13 @@ async function registerBiometricCredential() {
 }
 
 async function authenticateWithBiometric(credentialId) {
+  if (isNativeAndroid()) {
+    return SinceBiometrics.authenticate({
+      title: "Sblocca Since",
+      subtitle: "Usa biometria o blocco schermo del dispositivo."
+    });
+  }
+
   if (!credentialId || !canUseWebAuthn()) throw new Error("Biometric authentication is not available.");
 
   return navigator.credentials.get({
@@ -1709,6 +1823,10 @@ function base64UrlToBuffer(value) {
     bytes[index] = binary.charCodeAt(index);
   }
   return bytes;
+}
+
+function isNativeAndroid() {
+  return Capacitor.isNativePlatform() && Capacitor.getPlatform() === "android";
 }
 
 function toInputDate(value) {

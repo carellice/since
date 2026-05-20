@@ -1,0 +1,23 @@
+{
+  "appId": "com.flaviocecca.since",
+  "appName": "Since",
+  "webDir": "dist",
+  "backgroundColor": "#f8f2e9",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "StatusBar": {
+      "overlaysWebView": false,
+      "style": "LIGHT",
+      "backgroundColor": "#f7f1e9"
+    },
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_since",
+      "iconColor": "#2f6d54"
+    }
+  }
+}

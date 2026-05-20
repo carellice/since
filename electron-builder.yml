@@ -1,0 +1,27 @@
+appId: com.flaviocecca.since
+productName: Since
+artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+directories:
+  output: release/desktop
+files:
+  - dist/**/*
+  - electron/**/*
+  - package.json
+extraMetadata:
+  main: electron/main.cjs
+npmRebuild: false
+mac:
+  category: public.app-category.healthcare-fitness
+  identity: "-"
+  target:
+    - dmg
+    - zip
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true

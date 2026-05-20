@@ -1,21 +1,41 @@
 {
   "name": "since-pwa",
+  "productName": "Since",
   "version": "1.0.0",
+  "description": "Habit tracker local-first per monitorare da quanto tempo hai lasciato un'abitudine.",
+  "author": "Flavio Cecca",
   "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "prebuild": "node scripts/write-build-version.mjs",
     "dev": "vite --host 0.0.0.0",
     "build": "vite build",
-    "preview": "vite preview --host 0.0.0.0"
+    "preview": "vite preview --host 0.0.0.0",
+    "package:mac": "node scripts/package-app.mjs mac",
+    "package:win": "node scripts/package-app.mjs win",
+    "package:desktop": "node scripts/package-app.mjs desktop",
+    "package:android": "node scripts/package-app.mjs android",
+    "package:all": "node scripts/package-app.mjs all",
+    "package:clean": "node scripts/package-app.mjs clean",
+    "cap:open:android": "node scripts/package-app.mjs open-android"
   },
   "dependencies": {
+    "@capacitor/app": "^8.1.0",
+    "@capacitor/core": "^8.3.4",
+    "@capacitor/local-notifications": "^8.2.0",
+    "@capacitor/status-bar": "^8.0.2",
     "@vitejs/plugin-react": "^5.0.0",
-    "vite": "^7.0.0",
+    "lucide-react": "^0.475.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "zustand": "^5.0.0",
-    "lucide-react": "^0.475.0"
+    "vite": "^7.0.0",
+    "zustand": "^5.0.0"
   },
-  "devDependencies": {}
+  "devDependencies": {
+    "@capacitor/android": "^8.3.4",
+    "@capacitor/cli": "^8.3.4",
+    "electron": "^42.2.0",
+    "electron-builder": "^26.8.1"
+  }
 }
